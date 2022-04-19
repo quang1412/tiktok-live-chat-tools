@@ -1,0 +1,25 @@
+{
+  "name": "spritechat",
+  "version": "1.0.0",
+  "main": "server.js",
+  "dependencies": {
+    "express": "^4.15.3",
+    "ws": "^3.0.0",
+    "websocket": "^1.0.34",
+    "tiktok-livestream-chat-connector": "^0.9.15",
+    "socket.io": "^4.4.1",
+    "slick-carousel": "^1.8.1",
+    "proxy-agent": "^5.0.0"
+  },
+  "engines": {
+    "node": "10.2.0"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
+  },
+  "author": "Victoria Kirst (victoriakirst@gmail.com)",
+  "license": "MIT",
+  "description": ""
+}
