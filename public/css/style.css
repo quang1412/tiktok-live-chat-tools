@@ -1,8 +1,10 @@
+body.modal-open header, body.modal-open main, body.modal-open footer {
+  filter: blur(2px);
+}
 
 .header[data-hs-header-options*=fixMoment] {
   transition: .3s ease;
 }
-
 .header {
   display: block;
   position: relative;
@@ -145,4 +147,28 @@ figure {
 .tiktok-avatar {
     background-image: url(/images/placeholder-avatar.jpeg);
     background-size: contain;
+}
+.cmt-keyword-item, #cmt-keyword-input{
+    display:inline-block;
+    background: white;
+    padding: 0 5px;
+    margin: 0 5px 5px 0;
+    border: 1px dashed gray;
+    border-radius: 10px;
+}
+#cmt-keyword-input{
+  border-color: #0d6efd;
+  width:30%;
+}
+.cmt-keyword-item .remove-item{
+  cursor: pointer;
+}.cmt-keyword-item .remove-item:hover{
+  color: #dc3545;
+}
+.matched-keyword-cmt{
+  background:lightgrey;
+  border-radius:5px;
+}
+#tiktok_comments_widget .card-footer.freez{
+  min-height:50% !important;
 }

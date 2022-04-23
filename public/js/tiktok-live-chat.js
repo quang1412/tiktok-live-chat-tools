@@ -1,9 +1,26 @@
-var socket = io('https://tiktoklive.glitch.me', { });
+var socket = io();
 
 const tiktok_comment_list = document.getElementById('tiktok-comments-list');
 var TIKTOK_CONNECTED = false;
 var AUTO_TIKTOK_RECONNECT = true;
 var CLIENT_ID = null;
+
+if(!localStorage.getItem('setting')){
+  localStorage.setItem('setting', JSON.stringify({
+    tts_lang:'vi',
+    tts_comment_read: false,
+    tts_donate_read: false,
+    tts_delay: 1000,
+    tts_volume: 1,
+    tts_slow: false,
+    tts_thank_donate_structure : 'Thank {uid} for {diamond} diamonds',
+    tts_comment_structure:'{uid}: {commnent}',
+    tts_replace_default_uid: '',
+    comment_keywords: []
+  }));
+}
+
+var SETTING = JSON.parse(localStorage.getItem('setting'));
 
 socket.on('disconnect', () => {
   CLIENT_ID = null;
@@ -22,19 +39,188 @@ socket.on("tiktokConnected", result => {
   TIKTOK_CONNECTED = result;
 });
 
+function createThankDonate(data){
+    return SETTING.tts_thank_donate_structure.replace('{uid}', fixNickname(data.uniqueId)).replace('{nickname}', fixNickname(data.nickname)).replace('{giftname}', data.extendedGiftInfo.name)
+      .replace('{giftcount}', data.gift.repeat_count).replace('{diamond}', data.extendedGiftInfo.diamond_count*data.gift.repeat_count)
+}
+
+function createCommentTts(data){
+  let comment = fixComment(data.comment)
+  let uniqueId = fixNickname(data.uniqueId)
+  let nickname = data.nickname || uniqueId
+  if(comment){
+    if(SETTING.tts_comment_structure){
+      return SETTING.tts_comment_structure.replace('{uid}', uniqueId).replace('{nickname}', nickname).replace('{comment}', comment)
+    } else {
+      return uniqueId+'. '+comment
+    }
+  } else {
+    return null
+  }
+}
+
+function fixNickname(nickname){
+  if(/user\d{10,}/g.test(nickname) && SETTING.tts_replace_default_uid){
+    console.log(nickname);
+    return SETTING.tts_replace_default_uid;
+  }
+  else {
+    return nickname.replace('_', ' ').replace('.', ' ');
+  }
+}
+
+function fixComment(content){
+  return content.toLowerCase()
+    .replace(' k ',' không ').replace(' ko ',' không ').replace(' hok ',' không ')
+    .replace(' c ',' chị ').replace(' chj ',' chị ').replace(' a ',' anh ').replace(' e ',' em ')
+    .replace(' j ',' gì ').replace(' đc ', ' được ').replace(' r ', ' rồi ').replace(' ib ',' inbox ')
+    .replace(' vn ',' việt nam ').replace(' ng ',' người ')
+    .replace(/(.)\1{5,}/g,'')
+    .replace(/[^\p{L}\p{N}\p{P}\p{Z}^$\n]/gu, '')
+}
+
+function downloadExcel(array){
+  var lineArray = [];
+  array.forEach(function(infoArray, index) {
+      var line = infoArray.join(" \t");
+      lineArray.push(index == 0 ? line : line);
+  });
+  var csvContent = lineArray.join("\r\n");
+  console.log(csvContent);
+
+  var blob = new Blob([csvContent],{ type: "application/vnd.ms-excel;charset=utf-8" });
+  saveAs(blob, "tiktok-comment.xls");
+}
+
+// function nofti(){
+//   new Audio('/sounds/notif-sound.mp3').play();
+// }
+
+function checkKeyword(comment, callback){
+  var keycheck = false;
+  var phonecheck = /((((\+|)84)|0)(3|5|7|8|9)+([0-9]{8})\b)/.test(comment);
+  if(SETTING.comment_keywords.length){
+    var re = `(${SETTING.comment_keywords.join(')|(')})`;
+    var regex = new RegExp(re, "g");
+    var keycheck = regex.test(comment.toLowerCase()); 
+  }
+  return callback(phonecheck||keycheck);
+}
+class modalConfirm{
+  constructor(){
+    this.result = 0;
+    this.modal = $('#confirm-modal');
+    this.modal_title = $('#myModalLabel');
+    this.yes_btn = $('#modal-btn-yes');
+    this.yes_btn.click(()=>{this.result = 1});
+    this.no_btn = $('#modal-btn-no');
+    this.no_btn.click(()=>{this.result = 0});
+    this.modal.on('shown.bs.modal', (e) => {
+      setTimeout(()=>{this.yes_btn.focus()},50);
+    });
+  }
+  confirm(title, callback){
+    this.result = 0;
+    this.modal_title.text(title);
+    this.modal.modal('show');
+    this.yes_btn.focus();
+    this.modal.on('hidden.bs.modal', ()=>{
+      this.modal.off('hidden.bs.modal');
+      setTimeout(()=>{return callback(this.result);},50);
+    })
+  }
+}
+const confirmModal = new modalConfirm()
+
+class TTS{
+  constructor(){
+    this.queue_list = [];
+    this.speaking = false
+    this.speech = new Audio('/sounds/notif-sound.mp3');;
+    this.listenSocket();
+    this.speak();
+  }
+  
+  listenSocket(){
+    socket.on("eventChat", result => { 
+      if(SETTING.tts_comment_read){
+        let nickname = result.nickname || fixNickname(result.uniqueId);
+        let content = createCommentTts(result)
+        if(content){
+          this.queue_list.push({type:'comment', content: content});
+        }
+      }
+    });
+    
+    socket.on("eventGift", result => {
+      if(SETTING.tts_donate_read){
+        this.queue_list.push({type:'donate', content:fixComment(createThankDonate(result))});
+      }
+    });
+    socket.on("tiktokConnected", success => {
+      this.queue_list = [];
+    });
+  }
+  resetQueue(){
+    this.queue_list = [];
+  }
+  speak(){
+    if(TIKTOK_CONNECTED && CLIENT_ID && this.queue_list.length && !this.speaking){
+      let job = this.queue_list.pop();
+      if((job.type == 'comment' && !SETTING.tts_comment_read) || 
+        (job.type == 'donate' && !SETTING.tts_donate_read)){
+        this.queue_list = this.queue_list.filter((j) =>{if(j.type != job.type){return j;}});
+        this.speak()
+      }
+      else{
+        this.speaking = true
+        $.post("/speech", {text: job.content, lang: SETTING.tts_lang, slow: SETTING.tts_slow})
+          .done(data => {
+            this.speech = new Audio("data:audio/x-wav;base64," + data);
+            this.speech.volume = SETTING.tts_volume;
+            this.speech.play();
+            this.speech.onended = () => {
+              this.speaking = false
+            }
+          })
+          .fail( (xhr, textStatus, errorThrown) => {
+            console.error(xhr.responseText);
+            this.speaking = false
+            this.speak();
+          });
+      }
+    }
+    setTimeout(()=>{
+      this.speak();
+    },SETTING.tts_delay)
+  }
+}
+const textToSpeech = new TTS();
+
 class RoomInfo {
   constructor(root) {
     this.card = $('<div>', {class:'card shadow-sm'}).appendTo(root);
     this.card_body = $('<div>', {class:'card-body bg-light py-2'}).appendTo(this.card);
     this.card_content = $('<span>').html('<strong><i class="fas fa-info-circle"></i> Thông tin phòng:</strong>').appendTo(this.card_body);
+    this.pingtime = $('<small>', {class:'ms-3'}).html('<span>Server ping:</span> <span>offline</span>').appendTo(this.card_content);
     this.tiktok_status = $('<small>', {class:'ms-3'}).text('Chưa kết nối').appendTo(this.card_content);
     this.time = $('<small>',{class:'ms-3'}).text('Thời lượng: 00:00:00').appendTo(this.card_content);
-    this.data = {create_time: new Date().getTime()/1000}
+    this.data = {create_time: new Date().getTime()/1000};
+    this.ping = 0;
     this.listenSocket();
-    this.updateInfo()
-    setInterval(()=>{this.updateInfo()},1000);
+    this.updateInfo();
+    var pingtime = new Date().getTime();
+    setInterval(()=>{
+      this.updateInfo();
+    },1000);
+    setInterval(()=>{
+      socket.emit('latency', Date.now(), startTime => {
+        var latency = Date.now() - startTime;
+        // console.log(latency);
+        this.pingtime.children().last().text(`${(latency/1000).toFixed(1)}s`);
+      });
+    },5000);
   }
-  
   listenSocket(){
     socket.on("eventConnected", result => {
       console.log(result)
@@ -47,9 +233,11 @@ class RoomInfo {
       console.log(result.roomInfo.owner.bio_description);
       console.log(result.roomInfo.owner.avatar_large.url_list[0]);
       this.data.create_time = result.roomInfo.create_time;
-    })
+    });
+    socket.on('disconnect', () => {
+      this.pingtime.children().last().text('offline');
+    });
   }
-  
   updateInfo(){
     if(CLIENT_ID && TIKTOK_CONNECTED){
       this.tiktok_status.text('Đã kết nối').removeClass('text-danger').addClass('text-success');
@@ -92,7 +280,7 @@ class UserNameInput {
   
   stopBtnClick(){
     this.stop_button.addClass('disabled');
-    setTimeout(()=>{socket.emit("stopTiktokConnection", true);}, 500)
+    setTimeout(()=>{socket.emit("stopTiktokConnection");}, 500)
   }
   
   formDisplay(status){
@@ -144,13 +332,13 @@ class UserNameInput {
       if(TIKTOK_CONNECTED){
         this.reconnect();
       }
-    })
+    });
     
     socket.on('connect', () => {
       if(!TIKTOK_CONNECTED){
         this.start_button.removeClass('disabled');
       }
-    })
+    });
     
     socket.on("tiktokConnected", result => {
       if(result){
@@ -176,21 +364,58 @@ class ChatBoxWidget {
     this.defaultAvatar = '/images/placeholder-avatar.jpeg';
     this.totalComment = 0;
     this.commentArray = [['username','comment']];
+    this.match_cmt_sound = new Audio('/sounds/notif-sound.mp3');
+    // this.notif_sound_busy = false;
     
-    this.card = $('<div>', {class:'card shadow-sm'}).appendTo(root);
+    this.card = $('<div>', {class:'card shadow-sm'}).css('height','640px').appendTo(root);
     this.card_header = $('<div>', {class:'card-header bg-light'}).html('<strong><i class="fas fa-comments"></i> Danh sách comments</strong>').appendTo(this.card);
+    this.dropdown_btn = $('<a>', {class:'', id:'chatboxDropdownMenu', type:'button', 'data-bs-toggle':'dropdown', 'aria-expanded':'false'}).html('<i class="fs-5 fas fa-bars"></i>');
+    this.dropdown_menu = $('<ul>',{class:'dropdown-menu dropdown-menu-end', 'aria-labelledby':'chatboxDropdownMenu'});
+    this.download_all_btn = $('<li>').html('<a class="dropdown-item" href="javascript:void(0)">Download toàn bộ cmt</a>').click(()=>{downloadExcel(this.commentArray)}).appendTo(this.dropdown_menu);
+    this.download_filted_btn = $('<li>').html('<a class="dropdown-item" href="javascript:void(0)">Download cmt đã khớp</a>').appendTo(this.dropdown_menu);
+    $('<li><hr class="dropdown-divider"></li>').appendTo(this.dropdown_menu);
+    $('<div>', {class:'dropdown float-end'}).append(this.dropdown_btn, this.dropdown_menu).appendTo(this.card_header);
     this.commentCounter = $('<small>',{class:'ms-1'}).text('(0)').appendTo(this.card_header);
-    this.downloadBtn = $('<a>',{class:'float-end'}).html('<i class="fa-solid fa-download"></i>').css('cursor', 'pointer').click(()=>{this.download()}).appendTo(this.card_header);
-    this.card_body = $('<div>', {class:'card-body bg-light overflow-auto hidden-scrollbar', id:'bjrtgxe'}).css('height','600px').appendTo(this.card);
+    this.card_body = $('<div>', {class:'card-body bg-light overflow-auto hidden-scrollbar', id:'bjrtgxe'}).appendTo(this.card);
     this.demo_list = $('<ul>', {class:'list-unstyled'}).appendTo(this.card_body);
     this.commentList = $('<ul>', {class:"px-0"}).appendTo(this.card_body);
+    this.card_footer = $('<div>', {class:'card-footer bg-light overflow-auto hidden-scrollbar'}).css({'min-height':'41px',height:'41px',transition:'all .5s'}).appendTo(this.card);
+    this.keyword_list = $('<div>',{class:'cmt-keyword-list'}).html('<span class="cmt-keyword-item">{phone}</span>').appendTo(this.card_footer);
     
+    this.keyword_input = $('<input>',{id:'cmt-keyword-input',placeholder:'thêm từ khoá'}).prependTo(this.keyword_list);
+    this.keyword_input.keypress(e => {
+      if (e.which == 27) {
+        e.currentTarget.value = null;
+        return false;
+      }
+      else if (e.which == 13) {
+        let keyword = e.currentTarget.value.trim().toLowerCase();
+        if (keyword == null || keyword == "" || SETTING.comment_keywords.indexOf(keyword) >= 0) {return false;} 
+        else {
+          SETTING.comment_keywords.push(keyword);
+          localStorage.setItem('setting',JSON.stringify(SETTING))
+          this.addKeyword(keyword);
+        }
+        e.currentTarget.value = null;
+        return false;
+      }
+    });
+    $.each(SETTING.comment_keywords, (i, keyword) => {
+      this.addKeyword(keyword);
+    });
+    this.card_footer.hover((e)=>{
+      this.card_footer.css('min-height', '50%');
+      this.keyword_input.focus();
+    },(e)=>{
+      this.card_footer.css('min-height', '41px');
+      this.keyword_input.val(null);
+      $(':focus').blur()
+    })
     for(var i = 0; i <= 15; i++) {
       let list = ['w-50', 'w-75', 'w-100'];
       let width = list[Math.floor(Math.random()*list.length)];
       $('<li>').html(`<div class="bg-white my-2 ${width}">&nbsp</div>`).appendTo(this.demo_list);
     }
-
     setInterval(()=>{
       let a = document.querySelector(`#${this.card_body.attr('id')}:not(:hover)`);
       try{a.scrollTo({top: 0, behavior: 'smooth'})}catch(r){return}
@@ -198,33 +423,44 @@ class ChatBoxWidget {
     
     this.listenSocket();
   }
-  
-  download(){
-    var lineArray = [];
-    this.commentArray.forEach(function(infoArray, index) {
-        var line = infoArray.join(" \t");
-        lineArray.push(index == 0 ? line : line);
-    });
-    var csvContent = lineArray.join("\r\n");
-    console.log(csvContent);
-
-    var blob = new Blob([csvContent],{ type: "application/vnd.ms-excel;charset=utf-8" });
-    saveAs(blob, "tiktok-comment.xls");
-  }
-
   listenSocket(){
     socket.on("eventChat", result => {
+      result.comment = result.comment.toLowerCase();
       this.demo_list.hide();
       this.totalComment += 1;
       this.commentCounter.text(`(${this.totalComment})`);
-      let time = new Date(new Date().getTime()+7000*60*60).toISOString().substr(11, 8);
+      // let time = new Date(new Date().getTime()+7000*60*60).toISOString().substr(11, 8);
       this.commentArray.push([result.uniqueId, result.comment]);
-      
-      $('<li>',{class:'py-1 d-flex'}).html(`<img class="tiktok-avatar rounded-circle" width="23" height="23" src="${result.profilePictureUrl || this.defaultAvatar}">
-                                              <div class="ms-2">
-                                                <small class="tiktok-username"><strong>${result.uniqueId}:</strong></small>
-                                                <small class="tiktok-message ms-1">${result.comment}</small>
-                                              </div>`).prependTo(this.commentList);
+      $.get(result.profilePictureUrl);
+      let cmt_item = $('<li>',{class:'p-1 d-flex'}).html(`<img class="tiktok-avatar rounded-circle" width="23" height="23" src="${result.profilePictureUrl || this.defaultAvatar}">
+      <div class="ms-2">
+      <small class="tiktok-username"><strong>${result.uniqueId}:</strong></small>
+      <small class="tiktok-message ms-1">${result.comment}</small>
+      </div>`).prependTo(this.commentList);
+      checkKeyword(result.comment, match => {
+        if(match){
+          cmt_item.addClass('matched-keyword-cmt');
+          if(this.match_cmt_sound.paused){
+            this.match_cmt_sound.play(); 
+          }
+        }
+      });
+    })
+  }
+  addKeyword(keyword){
+    let key_item = $('<span>',{class:'cmt-keyword-item'}).text(keyword).insertAfter(this.keyword_input);
+    $('<a>').html(' <i class="remove-item far fa-times-circle"></i>').click(()=>{this.removeKeyword(key_item)}).appendTo(key_item)
+  }
+  removeKeyword(item){
+    this.card_footer.addClass('freez');
+    let key = item.text().trim();
+    confirmModal.confirm(`Bạn có chắc chắn xoá từ khoá {${key}} không?`, confirm => {
+      this.card_footer.removeClass('freez');
+      if(confirm){
+        SETTING.comment_keywords.splice(SETTING.comment_keywords.indexOf(key), 1);
+        localStorage.setItem('setting',JSON.stringify(SETTING));
+        item.remove();
+      }
     })
   }
 }
@@ -257,12 +493,12 @@ class GiftList {
     socket.on("eventGift", result => {
       this.demo_list.hide();
       $('<li>', {class:'py-1 d-flex'}).html(`<img class="tiktok-avatar rounded-circle" width="23" height="23" src="${result.profilePictureUrl || this.defaultAvatar}">
-                                              <div class="ms-2">
-                                                <small><strong>${result.uniqueId}:</strong></small>
-                                                <small class="ms-1"> đã tặng</small>
-                                                <img width="23" height="23" src="${result.extendedGiftInfo.icon.url_list[0]}">
-                                                <small><strong> x${result.gift.repeat_count}</strong></small>
-                                              </div>`).prependTo(this.gift_list);
+      <div class="ms-2">
+      <small><strong>${result.uniqueId}:</strong></small>
+      <small class="ms-1"> đã tặng</small>
+      <img width="23" height="23" src="${result.extendedGiftInfo.icon.url_list[0]}">
+      <small><strong> x${result.gift.repeat_count}</strong></small>
+      </div>`).prependTo(this.gift_list);
     })
   }
 }
@@ -512,7 +748,7 @@ class CommentPieChart {
     this.chart;
     
     this.card = $('<div>', {class:'card shadow-sm'}).appendTo(root);
-    this.card_header = $('<div>', {class:'card-header bg-light'}).html('<strong>Tỉ lệ người xem</strong> <small>(comment & donate)</small>').appendTo(this.card);
+    this.card_header = $('<div>', {class:'card-header bg-light'}).html('<strong><i class="fas fa-chart-pie"></i> Tỉ lệ người xem</strong> <small>(comment & donate)</small>').appendTo(this.card);
     this.card_body = $('<div>', {class:'card-body bg-light'}).appendTo(this.card);
     this.canvas = $('<canvas>',{class:''}).appendTo(this.card_body);
     this.context = this.canvas[0].getContext('2d');
@@ -566,23 +802,47 @@ class CommentPieChart {
   }
 }
 
-class SettingModalBtn{
+class SettingModal{
   constructor(root){
-    // this.button = $('<button>',{class:'btn btn-outline-primary ms-2 float-end'}).html('<span class="d-none d-md-inline">Cài đặt</span> <i class="fas fa-cog"></i>').appendTo(root);
-    // this.button.click(this.showModal);
+    this.modal = root;
+    
+    this.modal.on('show.bs.modal', event => {
+      this.modalShow();
+    });
+    this.modal.on('hidden.bs.modal', event => {
+      this.modalHide();
+      this.modal.find('.collapse').removeClass('show')
+    });
+    $('#setting-save-btn').click(()=>{
+      this.modalSave();
+    });
+    // this.setting = JSON.parse(localStorage.getItem('setting'));
   }
   
-  showModal(){
-    alert('ok');
-  }
+  modalShow(){
+    $.each(SETTING, (key, val) => {
+      $(`select[data-setting="${key}"]`).val(val).change();
+      $(`input[data-setting="${key}"][type="checkbox"]`).prop('checked', val);
+      $(`input[data-setting="${key}"][type="range"], input[data-setting="${key}"][type="text"]`).val(val);
+    })
+  };
+  
+  modalHide(){
+    // console.log(SETTING);
+  };
+  
+  modalSave(){
+    textToSpeech.resetQueue()
+    
+    $('#setting-modal input[type="checkbox"]').each((i, e) => {
+      SETTING[$(e).attr('data-setting')] = $(e).is(":checked");
+    });
+    
+    $('#setting-modal input[type="range"], #setting-modal input[type="text"], #setting-modal select').each((i, e) => {
+      SETTING[$(e).attr('data-setting')] = $(e).val();
+    })
+
+    localStorage.setItem('setting', JSON.stringify(SETTING));
+  };
 }
-// class CommentsFilter{
-//   constructor(root){
-//     this.card = $('<div>', {class:'card shadow-sm'}).appendTo(root);
-//     this.card_header = $('<div>', {class:'card-header bg-light'}).html('<strong>Bộ lọc comment</strong>').appendTo(this.card);
-//     this.card_body = $('<div>',{class: 'card-body bg-light'}).appendTo(this.card);
-//     this.tools_bar = $('<div>', {class:'d-flex'}).appendTo(this.card_body);
-//     this.keywords = $('<small>', {class:'d-flex my-auto'}).html('<strong>Từ khoá: </strong> <span class="ms-2">abc</span>').appendTo(this.tools_bar);
-//     this.addKeywordBtn = $('<button>', {class:'btn btn-sm btn-outline-primary ms-2 float-right'}).text('thêm từ khoá').appendTo(this.tools_bar);
-//   }
-// }
+
