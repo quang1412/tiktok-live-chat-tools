@@ -36,11 +36,17 @@
   })
   
   $('input[name="password_confirm"]').change(function(){
+    $(this).removeClass('is-invalid').addClass('is-valid')
+    this.setCustomValidity('')
     let valid = $(this).val() == password.val()
-    $(this)[0].setCustomValidity(valid ? '':'invalid')
+    console.log(valid)
+    if(!valid){
+      this.setCustomValidity('invalid')
+      $(this).addClass('is-invalid').removeClass('is-valid')
+    }
   })
   
-  $('input').on('change', function(e){
+  $('input.form-control:not(#password-confirm)').on('change', function(e){
     $(this).removeClass('is-invalid').addClass('is-valid')
     this.setCustomValidity('')
     if(!this.checkValidity()) {

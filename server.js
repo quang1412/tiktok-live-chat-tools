@@ -1,10 +1,10 @@
+// OK 
 const { WebcastPushConnection } = require('tiktok-livestream-chat-connector')
 const ProxyAgent = require('proxy-agent')
 const googleTTS = require('google-tts-api') // CommonJS
 const nodemailer =  require('nodemailer')
 const path = require('path')
 const cookieParser = require('cookie-parser')
-
 
 //EXPRESS
 const express = require('express') 
@@ -15,7 +15,7 @@ app.use(express.json())       // to support JSON-encoded bodies
 app.use(express.urlencoded()) // to support URL-encoded bodies
 app.use(cookieParser())
 app.set('views', __dirname + '/views');
-app.engine('html', require('ejs').renderFile);
+app.engine('html', require('ejs').renderFile)
 
 //SOCKET
 const socket = require('socket.io')
@@ -36,7 +36,7 @@ const db = getFirestore()
 
 const EMAIL_VALID_CODE = {}
 const RESET_VALID_CODE = {}
-const VALID_COOKIE = []
+const USER_COOKIES = {}
 
 console.log('server running')
 
@@ -45,7 +45,7 @@ app.get('/', function (req, res) {
 })
 
 app.get('/login', function (req, res) {
-  if(isLogin(req)){res.redirect('/')}
+  if(isLogin(req)) res.clearCookie('TTT_COOKIE').redirect('/')
   else{res.sendFile(path.join(__dirname, '/public/login.html'))}
 })
 app.post('/login', function (req, res) {
@@ -59,24 +59,24 @@ app.post('/login', function (req, res) {
       res.json({error:true,redirect:false,mess:'Mật khẩu không đúng'})
     } else {
       let cookie = makeid(12)
-      VALID_COOKIE.push(cookie)
+      USER_COOKIES[cookie] = account.data()
       res.cookie('TTT_COOKIE', cookie).json({error:false,redirect:'/',mess:'Đăng nhập thành công'})
     }
   });
 })
 
 app.get('/register', function (req, res) {
-  if(isLogin(req)){res.redirect('/')}
+  if(isLogin(req)){res.clearCookie('TTT_COOKIE').redirect('/')}
   else{res.sendFile(path.join(__dirname, '/public/register.html'))}
 })
 app.post('/register', function(req, res) {
   if(!req.body.name || !req.body.email || !req.body.validcode || !req.body.password) res.json({error:true,redirect:false,mess:'Thông tin đăng ký không hợp lệ'})
 
   if(EMAIL_VALID_CODE[req.body.email] == req.body.validcode){
-    createAccount(req.body.name, req.body.email, req.body.password, function(success){
-      if(success) {
+    createAccount(req.body.name, req.body.email, req.body.password, function(account){
+      if(account) {
         let cookie = makeid(12)
-        VALID_COOKIE.push(cookie)
+        USER_COOKIES[cookie] = account
         res.cookie('TTT_COOKIE', cookie).json({error:false,redirect:'/',mess:'Đăng ký thành công'})
       }
     })
@@ -133,10 +133,9 @@ app.post('/reset', function (req, res) {
   let email = RESET_VALID_CODE[code]
   if(!code || !password || !email) res.json({error:true,redirect:false,mess:'thông tin không hợp lệ'})
   else{
-    db.collection('accounts').doc(email).set({
-      password: password
-    }).then( function(){
-      subject = 'Mật khẩu đã được đặt lại',
+    db.collection('accounts').doc(email).update({password: password})
+    .then( function(){
+      let subject = 'Mật khẩu đã được đặt lại',
       text = 'Mật khẩu đã được đặt lại',
       html = `<p>Mật khẩu mới của bạn là: ${password}</p>`
       sendMail(email, subject, text, html, success => {})
@@ -184,22 +183,6 @@ app.get('/tiktok-live-chat', function (req, res) {
   res.render(path.join(__dirname, '/public/tiktok-live-chat.html'), {isLogin:isLogin(req)})
 })
 
-app.post('/speech', function (req, res) {
-   googleTTS
-    .getAudioBase64(req.body.text, {
-      lang: req.body.lang,
-      slow: Boolean(req.body.slow != 'false'),
-      host: 'https://translate.google.com',
-      timeout: 10000,
-    })
-    .then(base64sound => {
-     res.status(200).send(base64sound)
-   })
-    .catch(error => {
-      res.status(500).send(`Lỗi gTTS: ${error}`)
-   })
-})
-
 async function findAccount(email, callback){
   let account = await db.collection('accounts').doc(email).get()
   if (account.exists) {
@@ -209,26 +192,16 @@ async function findAccount(email, callback){
   }
 }
 
-// async function login(email, password, callback){
-//   const account = db.collection('accounts').doc(email);
-//   const data = await account.get();
-//   if (!data.exists) {
-//     return callback({error:true,message:'tài khoản không tồn tại'})
-//   } else if (data.data().password != password) {
-//     return callback({error:true,message:'mật khẩu không đúng'})
-//   } else {
-//     return callback({error:false,message:'đăng nhập thành công'})
-//   }
-// }
-
 async function createAccount(name, email, password, callback){
-  await db.collection('accounts').doc(email).set({
+  let data = {
     name: name,
     password: password
-  }).then( function(){
-    return callback(true)
+  }
+  await db.collection('accounts').doc(email).set(data).then( function(res){
+    return callback(data)
   })
 }
+
 function makeid(length) {
     var result           = '';
     var characters       = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
@@ -240,7 +213,7 @@ function makeid(length) {
    return result;
 }
 function isLogin(req){
-  if(VALID_COOKIE.indexOf(req.cookies.TTT_COOKIE) >= 0){
+  if(USER_COOKIES[req.cookies.TTT_COOKIE]){
     return true;
   } else {
     return false
@@ -269,7 +242,20 @@ async function sendMail(to, subject, text, html, callback){
     }
   });
 }
-
+function speechBase64(text, lang, slow, callback){
+  googleTTS.getAudioBase64(text, {
+    lang: lang,
+    slow: Boolean(slow != 'false'),
+    host: 'https://translate.google.com',
+    timeout: 10000,
+  })
+  .then(base64sound => {
+   return callback(base64sound)
+  })
+  .catch(error => {
+    return callback(false)
+  })
+}
 class tiktokLive{
   constructor(uid, cliendId){
     this.uid = uid
@@ -367,11 +353,22 @@ class tiktokLive{
 io.sockets.on('connection', (socket) => {
   console.log(`Kết nối socket mới, ID: ${socket.id}`)
   
+  let cookie = socket.handshake.headers['cookie']
+  let ttt_cookie = cookie.match(/(?<=TTT_COOKIE=)[\d\w]{12}/g)
+  if(ttt_cookie){
+    console.log(USER_COOKIES[ttt_cookie[0]])
+  }
+  
   socket.on('disconnect', reason => {
     console.log('Mất kết nối client', socket.id, reason)
   })
   socket.on('latency', function (startTime, cb) {
     cb(startTime)
+  })
+  socket.on('speech', (text, lang, slow, callback) => {
+    speechBase64(text, lang, slow, base64sound => {
+      callback(base64sound)
+    })
   })
   socket.on('TiktokConnectStart', (uid) => {
     let tiktok_live = new tiktokLive(uid, socket.id)

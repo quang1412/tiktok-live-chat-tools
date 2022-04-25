@@ -32,7 +32,7 @@
                   </li>
                   <li class="nav-item">
                     <a class="btn btn-sm btn-outline-primary <%= (isLogin?'d-none':'') %> my-1" id="login-btn" href="/login">Đăng nhập/đăng ký</a>
-                    <button class="btn btn-sm btn-outline-danger my-1 <%= (isLogin?'':'d-none') %>" onclick="Cookies.remove('TTT_COOKIE');location.reload()" id="logout-btn">Đăng xuất</button>
+                    <a class="btn btn-sm btn-outline-danger my-1 <%= (isLogin?'':'d-none') %>" href="/logout" id="logout-btn">Đăng xuất</a>
                   </li>
                 </ul>
               </div>

@@ -96,10 +96,6 @@ $(function(){
     saveAs(blob, "tiktok-comment.xls");
   }
 
-  // function nofti(){
-  //   new Audio('/sounds/notif-sound.mp3').play();
-  // }
-
   function checkKeyword(comment, callback){
     var keycheck = false;
     var phonecheck = /((((\+|)84)|0)(3|5|7|8|9)+([0-9]{8})\b)/.test(comment);
@@ -178,20 +174,35 @@ $(function(){
         }
         else{
           this.speaking = true
-          $.post("/speech", {text: job.content, lang: SETTING.tts_lang, slow: SETTING.tts_slow})
-            .done(data => {
-              this.speech = new Audio("data:audio/x-wav;base64," + data);
+
+          socket.emit('speech', job.content, SETTING.tts_lang, SETTING.tts_slow, base64sound => {
+            if (base64sound) {
+              this.speech = new Audio("data:audio/x-wav;base64," + base64sound);
               this.speech.volume = SETTING.tts_volume;
               this.speech.play();
               this.speech.onended = () => {
                 this.speaking = false
               }
-            })
-            .fail( (xhr, textStatus, errorThrown) => {
-              console.error(xhr.responseText);
+            } else {
               this.speaking = false
               this.speak();
-            });
+            }
+          });
+
+          // $.post("/speech", {text: job.content, lang: SETTING.tts_lang, slow: SETTING.tts_slow})
+          // .done(data => {
+          //   this.speech = new Audio("data:audio/x-wav;base64," + data);
+          //   this.speech.volume = SETTING.tts_volume;
+          //   this.speech.play();
+          //   this.speech.onended = () => {
+          //     this.speaking = false
+          //   }
+          // })
+          // .fail( (xhr, textStatus, errorThrown) => {
+          //   console.error(xhr.responseText);
+          //   this.speaking = false
+          //   this.speak();
+          // });
         }
       }
       setTimeout(()=>{
@@ -206,8 +217,7 @@ $(function(){
       this.card = $('<div>', {class:'card shadow-sm'}).appendTo(root);
       this.card_body = $('<div>', {class:'card-body bg-light py-2'}).appendTo(this.card);
       this.card_content = $('<span>').html('<strong><i class="fas fa-info-circle"></i> Thông tin phòng:</strong>').appendTo(this.card_body);
-      this.pingtime = $('<small>', {class:'ms-3'}).html('<span>Server ping:</span> <span>offline</span>').appendTo(this.card_content);
-      this.tiktok_status = $('<small>', {class:'ms-3'}).text('Chưa kết nối').appendTo(this.card_content);
+      this.pingtime = $('<small>', {class:'ms-3'}).html('<span>Server ping:</span> <span>N/A</span>').appendTo(this.card_content);
       this.time = $('<small>',{class:'ms-3'}).text('Thời lượng: 00:00:00').appendTo(this.card_content);
       this.data = {create_time: new Date().getTime()/1000};
       this.ping = 0;
@@ -220,7 +230,6 @@ $(function(){
       setInterval(()=>{
         socket.emit('latency', Date.now(), startTime => {
           var latency = Date.now() - startTime;
-          // console.log(latency);
           this.pingtime.children().last().text(`${(latency/1000).toFixed(1)}s`);
         });
       },5000);
@@ -239,22 +248,20 @@ $(function(){
         this.data.create_time = result.roomInfo.create_time;
       });
       socket.on('disconnect', () => {
-        this.pingtime.children().last().text('offline');
+        this.pingtime.children().last().text('N/A');
       });
     }
     updateInfo(){
       if(CLIENT_ID && TIKTOK_CONNECTED){
-        this.tiktok_status.text('Đã kết nối').removeClass('text-danger').addClass('text-success');
-        
         var a = (new Date().getTime()/1000).toFixed(0) - this.data.create_time;
         var h = parseInt((a/3600), 10);
         var m = parseInt((a%3600)/60, 10);
         var s = parseInt(((a%3600)%60), 10);
 
-        this.time.text(`Thời lượng: ${(h < 10 ? '0':'')+h}:${(m < 10 ? '0':'')+m}:${(s < 10 ? '0':'')+s}`) 
+        this.time.text(`Thời lượng: ${(h < 10 ? '0':'')+h}:${(m < 10 ? '0':'')+m}:${(s < 10 ? '0':'')+s}`)
       }
       else{
-        this.tiktok_status.text('Chưa kết nối').removeClass('text-success').addClass('text-danger');
+        
       }
     }
   }
