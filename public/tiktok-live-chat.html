@@ -34,8 +34,8 @@
                     <a class="nav-link active" href="/chot-don-tiktok">Tiktok live chat</a>
                   </li>
                   <li class="nav-item">
-                    <button class="btn btn-sm btn-outline-primary my-1" style="display:none" id="login-btn">Đăng nhập/đăng ký</button>
-                    <button class="btn btn-sm btn-outline-danger my-1" style="display:none" id="logout-btn">Đăng xuất</button>
+                    <a class="btn btn-sm btn-outline-primary <%= (isLogin?'d-none':'') %> my-1" id="login-btn" href="/login">Đăng nhập/đăng ký</a>
+                    <button class="btn btn-sm btn-outline-danger my-1 <%= (isLogin?'':'d-none') %>" onclick="Cookies.remove('TTT_COOKIE');location.reload()" id="logout-btn">Đăng xuất</button>
                   </li>
                 </ul>
               </div>
@@ -238,12 +238,12 @@
     </div>
     <footer id="footer">
       <div style="height:500px; background-image:linear-gradient(to bottom,rgb(217 217 217 / 0%) 0,rgb(0 89 255 / 8%) 100%)">
-        
       </div>
     </footer>
     <script type="text/javascript" src="//code.jquery.com/jquery-1.11.0.min.js"></script>
     <script type="text/javascript" src="//code.jquery.com/jquery-migrate-1.2.1.min.js"></script>
-    <script type="text/javascript" src="/js/vendor/jquery-cookie/jquery.cookie.js"></script>
+    <script type="text/javascript" src="/js/vendor/js-cookie/js.cookie.mjs"></script>
+    <script type="text/javascript" src="/js/vendor/js-cookie/js.cookie.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.0/FileSaver.min.js" integrity="sha512-csNcFYJniKjJxRWRV1R7fvnXrycHP6qDR21mgz1ZP55xY5d+aHLfo9/FcGDQLfn2IfngbAHd8LdfsagcCqgTcQ==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <!-- SOCKET IO-->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.2.0/socket.io.min.js"></script>
@@ -256,10 +256,6 @@
       $(document).ready(function(){
         $('#app-section').show();
         if( /iPad|iPhone|iPod|Android|windows phone/i.test(navigator.userAgent) ) { alert('Vui lòng truy cập từ trình duyệt máy tính để sử dụng đầy đủ tính năng')}
-        
-        // $(window).bind('beforeunload', function(){
-        //   return 'Are you sure you want to leave?';
-        // });
         
         var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
         var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
@@ -274,18 +270,7 @@
           } else {
             header.classList.remove("scrolled");
           }
-        });
-        
-        new UserNameInput($('#user-name-input'));
-        new ChatBoxWidget($('#tiktok_comments_widget'));
-        new ViewCountWidget($('#tiktok_view_count_widget'));
-        new GiftCountWidget($('#tiktok_diamond_count_widget'));
-        new LikeCountWidget($('#tiktok_like_count_widget'));
-        new FollowCountWidget($('#tiktok_follow_count_widget'));
-        new GiftList($('#gift_list'));
-        new CommentPieChart($('#comment_pie_chart'));
-        new RoomInfo($('#room_info'));
-        new SettingModal($('#setting-modal'));
+        })
       });
     </script>
   </body>

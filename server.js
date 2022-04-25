@@ -1,80 +1,188 @@
 const { WebcastPushConnection } = require('tiktok-livestream-chat-connector')
 const ProxyAgent = require('proxy-agent')
 const googleTTS = require('google-tts-api') // CommonJS
+const nodemailer =  require('nodemailer')
+const path = require('path')
+const cookieParser = require('cookie-parser')
 
-// Firestore
-const { initializeApp, applicationDefault, cert } = require('firebase-admin/app');
-const { getFirestore, Timestamp, FieldValue } = require('firebase-admin/firestore');
-const serviceAccount = require('./firestore/serviceAccountKey.json');
-
-initializeApp({
-  credential: cert(serviceAccount)
-});
-
-const db = getFirestore();
 
 //EXPRESS
-var express = require('express') 
-var app = express()
-var server = app.listen(process.env.PORT || 3000)
-const path = require('path')
-
+const express = require('express') 
+const app = express()
+const server = app.listen(process.env.PORT || 3000)
 app.use(express.static('public'))
 app.use(express.json())       // to support JSON-encoded bodies
 app.use(express.urlencoded()) // to support URL-encoded bodies
-
-console.log('server running')
+app.use(cookieParser())
+app.set('views', __dirname + '/views');
+app.engine('html', require('ejs').renderFile);
 
 //SOCKET
-var socket = require('socket.io')
-var io = socket(server, {
+const socket = require('socket.io')
+const io = socket(server, {
   cors: {
     origin: '*',
   }
 })
 
-app.get('/tiktok-live-chat', function (req, res) {
-   // res.send('Chốt đơn Tiktok')
-  res.sendFile(path.join(__dirname, '/public/tiktok-live-chat.html'))
+// FIRESTORE
+const { initializeApp, applicationDefault, cert } = require('firebase-admin/app')
+const { getFirestore, Timestamp, FieldValue } = require('firebase-admin/firestore')
+const serviceAccount = require('./firestore/serviceAccountKey.json')
+initializeApp({
+  credential: cert(serviceAccount)
+});
+const db = getFirestore()
+
+const EMAIL_VALID_CODE = {}
+const RESET_VALID_CODE = {}
+const VALID_COOKIE = []
+
+console.log('server running')
+
+app.get('/', function (req, res) {
+  res.render(path.join(__dirname, '/public/home.html'), {isLogin:isLogin(req)})
 })
 
 app.get('/login', function (req, res) {
-   // res.send('Chốt đơn Tiktok')
-  res.sendFile(path.join(__dirname, '/public/login.html'))
+  if(isLogin(req)){res.redirect('/')}
+  else{res.sendFile(path.join(__dirname, '/public/login.html'))}
 })
-
 app.post('/login', function (req, res) {
-  console.log(req.body)
-   res.status(200).send(`${req.body}`)
+  let email = req.body.email,
+      password = req.body.password
+  
+  db.collection('accounts').doc(email).get().then(account => {
+    if (!account.exists) {
+      res.json({error:true,redirect:false,mess:'Tài khoản không tồn tại'})
+    } else if (account.data().password != password) {
+      res.json({error:true,redirect:false,mess:'Mật khẩu không đúng'})
+    } else {
+      let cookie = makeid(12)
+      VALID_COOKIE.push(cookie)
+      res.cookie('TTT_COOKIE', cookie).json({error:false,redirect:'/',mess:'Đăng nhập thành công'})
+    }
+  });
 })
 
 app.get('/register', function (req, res) {
-   // res.send('Chốt đơn Tiktok')
-  res.sendFile(path.join(__dirname, '/public/register.html'))
+  if(isLogin(req)){res.redirect('/')}
+  else{res.sendFile(path.join(__dirname, '/public/register.html'))}
+})
+app.post('/register', function(req, res) {
+  if(!req.body.name || !req.body.email || !req.body.validcode || !req.body.password) res.json({error:true,redirect:false,mess:'Thông tin đăng ký không hợp lệ'})
+
+  if(EMAIL_VALID_CODE[req.body.email] == req.body.validcode){
+    createAccount(req.body.name, req.body.email, req.body.password, function(success){
+      if(success) {
+        let cookie = makeid(12)
+        VALID_COOKIE.push(cookie)
+        res.cookie('TTT_COOKIE', cookie).json({error:false,redirect:'/',mess:'Đăng ký thành công'})
+      }
+    })
+  } else {
+    res.json({error:true,redirect:false,mess:'Mã xác minh không chính xác'})
+  }
 })
 
 app.get('/forgot', function (req, res) {
-   // res.send('Chốt đơn Tiktok')
-  res.sendFile(path.join(__dirname, '/public/forgot.html'))
+  if(isLogin(req)){res.redirect('/')}
+  else{res.render(path.join(__dirname, '/public/forgot.html'))}
+})
+app.post('/forgot', function (req, res) {
+  if(!req.body.email || !req.body.hostname){
+    res.json({error:true,redirect:false, mess:'Email không hợp lệ'})
+  }
+  findAccount(req.body.email, available => {
+    if(!available){
+      res.json({error:true,redirect:false, mess:'Email không tồn tại'})
+      // res.status(400).send({redirect:false,mess:'Email không tồn tại'})
+    } else {
+      let validcode = makeid(20)
+      let email = req.body.email,
+      subject = 'Đặt lại mật khẩu',
+      text = 'Yêu cầu đặt lại mật khẩu',
+      html = '<p>Đường dẫn đặt lại mật khẩu</p>'+
+      `<a href="https://${req.body.hostname}/reset?code=${validcode}">https://${req.body.hostname}/reset?code=${validcode}<a>`
+
+      sendMail(email, subject, text, html, success => {
+        if(!success){
+          res.json({error:true,redirect:false, mess:'Lỗi khi gửi link đặt lại'})
+        } else {
+          RESET_VALID_CODE[validcode] = email
+          console.log('Mã đặt lại mật khẩu mới:', validcode, email)
+          res.json({error:false,redirect:'/', mess:'Đã gửi link đặt lại, vui lòng kiểm tra email'})
+        }
+      })
+    }
+  })
 })
 
 app.get('/reset', function (req, res) {
-   // res.send('Chốt đơn Tiktok')
-  res.sendFile(path.join(__dirname, '/public/reset.html'))
+  if(isLogin(req)){res.redirect('/')}
+  else{
+    let code = req.query.code
+    let email = RESET_VALID_CODE[code]
+    if(!email){res.redirect('/forgot')}
+    else{res.render(path.join(__dirname, '/public/reset.html'), {email:email||'', code:code})}
+  }
+})
+app.post('/reset', function (req, res) {
+  let code = req.body.code
+  let password = req.body.password
+  let email = RESET_VALID_CODE[code]
+  if(!code || !password || !email) res.json({error:true,redirect:false,mess:'thông tin không hợp lệ'})
+  else{
+    db.collection('accounts').doc(email).set({
+      password: password
+    }).then( function(){
+      subject = 'Mật khẩu đã được đặt lại',
+      text = 'Mật khẩu đã được đặt lại',
+      html = `<p>Mật khẩu mới của bạn là: ${password}</p>`
+      sendMail(email, subject, text, html, success => {})
+      
+      res.json({error:false,redirect:'/login',mess:'Đã đặt lại mật khẩu'})
+
+    }).catch(error => {
+      res.json({error:true,redirect:false,mess:'Đặt lại không thành công'})
+    })
+  }
 })
 
 app.get('/undefined', function (req, res) {
-   res.send('Chốt đơn Tiktok')
+   res.status(200).send('Chốt đơn Tiktok')
 })
 
+app.post('/validate-email', function(req, res) {
+  let validcode = Math.floor(1000 + Math.random() * 9000)
+  let email = req.body.email
+  findAccount(email, avainable => {
+    if(avainable){
+      res.json({error:true,mess:'Email đã được sử dụng'})
+    } else {
+      let email = req.body.email,
+      subject = 'Xác nhận đăng ký',
+      text = 'Mã xác minh của bạn là: '+validcode,
+      html = '<p>Bạn nhận được email này do địa chỉ email của bạn được dùng để đăng ký tài khoản tại ...</p>'+
+      '<p>Nếu hành động đó không phải do bạn thực hiện, bạn có thể bỏ qua email này.</p>'+
+      `<p>Mã xác minh của bạn là <strong>${validcode}</strong><p>`
 
-function handleError(err, response) {
-  response.status(500);
-  response.send(
-    "<html><head><title>Internal Server Error!</title></head><body><pre>"
-    + JSON.stringify(err, null, 2) + "</pre></body></pre>"
-  );
-}
+      sendMail(email, subject, text, html, success => {
+        if(success){
+          EMAIL_VALID_CODE[req.body.email] = validcode
+          console.log('Mã xác nhận email mới:', validcode, email)
+          res.json({error:false,mess:'Đã gửi mã xác minh, vui lòng kiểm tra email'})
+        } else {
+          res.json({error:true,mess:'Lỗi khi gửi mã xác minh'})
+        }
+      })
+    }
+  })
+});
+
+app.get('/tiktok-live-chat', function (req, res) {
+  res.render(path.join(__dirname, '/public/tiktok-live-chat.html'), {isLogin:isLogin(req)})
+})
 
 app.post('/speech', function (req, res) {
    googleTTS
@@ -92,6 +200,75 @@ app.post('/speech', function (req, res) {
    })
 })
 
+async function findAccount(email, callback){
+  let account = await db.collection('accounts').doc(email).get()
+  if (account.exists) {
+    return callback(true)
+  } else {
+    return callback(false)
+  }
+}
+
+// async function login(email, password, callback){
+//   const account = db.collection('accounts').doc(email);
+//   const data = await account.get();
+//   if (!data.exists) {
+//     return callback({error:true,message:'tài khoản không tồn tại'})
+//   } else if (data.data().password != password) {
+//     return callback({error:true,message:'mật khẩu không đúng'})
+//   } else {
+//     return callback({error:false,message:'đăng nhập thành công'})
+//   }
+// }
+
+async function createAccount(name, email, password, callback){
+  await db.collection('accounts').doc(email).set({
+    name: name,
+    password: password
+  }).then( function(){
+    return callback(true)
+  })
+}
+function makeid(length) {
+    var result           = '';
+    var characters       = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    var charactersLength = characters.length;
+    for ( var i = 0; i < length; i++ ) {
+      result += characters.charAt(Math.floor(Math.random() * 
+ charactersLength));
+   }
+   return result;
+}
+function isLogin(req){
+  if(VALID_COOKIE.indexOf(req.cookies.TTT_COOKIE) >= 0){
+    return true;
+  } else {
+    return false
+  }
+}
+async function sendMail(to, subject, text, html, callback){
+  var transporter =  nodemailer.createTransport({ // config mail server
+    service: 'Gmail',
+    auth: {
+      user: 'tiktokliveapp@gmail.com',
+      pass: 'Quang112485961'
+    }
+  });
+  var mainOptions = { // thiết lập đối tượng, nội dung gửi mail
+    from: 'Tiktok live app',
+    to: to,
+    subject: subject,
+    text: text,
+    html: html
+  }
+  transporter.sendMail(mainOptions, function(err, info){
+    if (err) {
+      return callback(false)
+    } else {
+      return callback(true)
+    }
+  });
+}
 
 class tiktokLive{
   constructor(uid, cliendId){
@@ -217,7 +394,3 @@ io.sockets.on('connection', (socket) => {
     })
   })
 })
-
-
-
-
