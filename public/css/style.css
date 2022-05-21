@@ -1,0 +1,174 @@
+body.modal-open header, body.modal-open main, body.modal-open footer {
+  filter: blur(2px);
+}
+
+.header[data-hs-header-options*=fixMoment] {
+  transition: .3s ease;
+}
+.header {
+  display: block;
+  position: relative;
+  right: 0;
+  left: 0;
+  width: 100%;
+  z-index: 1001;
+}
+
+.header-section {
+  position: relative;
+  z-index: 1;
+  background-color: #ffffff;
+}
+
+.avatar {
+  height: 3.125rem;
+  width: 3.125rem;
+  border-radius: 0.3125rem;
+  background: white;
+  padding: 0.5rem!important;
+}
+
+.gradient-bg {
+  background-image:linear-gradient(to bottom,rgba(255,255,255,0) 0,rgba(55,125,255,.075) 100%);
+  background-repeat: repeat-x;
+}
+
+figure {
+  margin-bottom: 0 !important;
+}
+
+.z-index-n1 {
+  z-index: -1;
+}
+
+.z-index-1 {
+  z-index: 1;
+}
+
+.z-index-2 {
+  z-index: 2;
+}
+
+.z-index-3 {
+  z-index: 3;
+}
+
+.display-4 {
+  font-weight: 600;
+}
+
+.space-2, .space-top-2 {
+    padding-top: 4rem!important;
+}
+
+.slick-gutters-3 {
+  margin-left: -0.9375rem;
+  margin-right: -0.9375rem;
+}
+
+.slick-pagination li::marker {
+  display: none;
+}
+
+.slick-pagination {
+  list-style-type: none;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  pointer-events: none;
+  padding-left: 0;
+  margin-bottom: 0;
+}
+
+.slick-pagination .presentation {
+  display: flex;
+  pointer-events: all;
+  margin: 0 0.25rem;
+  cursor: pointer;
+}
+
+.slick-pagination li span {
+  display: inline-block;
+  width: 0.9375rem;
+  height: 0.9375rem;
+  box-sizing: border-box;
+  background-color: #377dff;
+  border: 0.1875rem solid transparent;
+  border-radius: 50%;
+  -webkit-transform: scale(.6);
+  transform: scale(.6);
+  transition: .3s;
+}
+.slick-pagination li.slick-active span {
+  background-color: transparent;
+  border-color: #377dff;
+  -webkit-transform: scale(.9);
+  transform: scale(.9);
+}
+
+@media (min-width: 992px) {
+    .space-lg-4, .space-top-lg-4 {
+      padding-top: 12.5rem!important;
+  }
+  
+  .header-sticky-top-lg {
+    position: fixed;
+    bottom: auto;
+    top: 0;
+  }
+  .header-bg-transparent-lg:not(.js-header-fix-moment) .header-section {
+    background-color: transparent;
+  }
+}
+
+
+.header-white-bg-on-scroll.scrolled .header-section {
+    background-color: #ffffff;
+}
+
+.header-box-shadow-on-scroll.scrolled .header-section {
+    box-shadow: 0 1px 10px rgb(140 152 164 / 13%);
+}
+
+.jqstooltip {
+  padding: 5px !important;
+  border: none !important;
+  border-radius: 10px;
+  background-color: #f6a821 !important;
+  width: auto !important;
+  height: auto !important;
+}
+
+
+.hidden-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.tiktok-avatar {
+    background-image: url(/images/placeholder-avatar.jpeg);
+    background-size: contain;
+}
+.cmt-keyword-item, #cmt-keyword-input{
+    display:inline-block;
+    background: white;
+    padding: 0 5px;
+    margin: 0 5px 5px 0;
+    border: 1px dashed gray;
+    border-radius: 10px;
+}
+#cmt-keyword-input{
+  border-color: #0d6efd;
+  width:30%;
+}
+.cmt-keyword-item .remove-item{
+  cursor: pointer;
+}.cmt-keyword-item .remove-item:hover{
+  color: #dc3545;
+}
+.matched-keyword-cmt{
+  background:lightgrey;
+  border-radius:5px;
+}
+#tiktok_comments_widget .card-footer.freez{
+  min-height:50% !important;
+}
